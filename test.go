@@ -18,6 +18,7 @@ var query, _ = db.Query("SELECT * FROM bobato.usr")
 
 type Topic struct {
 	ID       int    `json:"ID"`
+	Name     string `json:"name"`
 	Title    string `json:"title"`
 	UserID   int    `json:"userID"`
 	Content  string `json:"content"`
@@ -44,8 +45,8 @@ type Usr struct {
 }
 
 type Session struct {
-	Name  string
-	Token string
+	UserID int
+	Token  string
 }
 
 // type Register struct {
@@ -70,72 +71,97 @@ func getTopics() []Topic {
 	for query.Next() {
 		var topic Topic
 		query.Scan(&topic.ID, &topic.Title, &topic.UserID, &topic.Content, &topic.Theme, &topic.Date)
+		topic.Response = getResponse(topic.ID)
+		// fmt.Println(topic.ID)
+		var queryName = db.QueryRow(`SELECT NAME FROM bobato.usr WHERE ID=` + strconv.Itoa(topic.ID))
+		queryName.Scan(&topic.Name)
 		topics = append(topics, topic)
 	}
+
 	return topics
+}
+func getResponse(id int) Response {
+	var queryResponse = db.QueryRow(`SELECT ID, USR_ID, TOPIC_ID, CONTENT FROM bobato.response WHERE TOPIC_ID=` + strconv.Itoa(id))
+	// fmt.Println(queryResponse)
+	var response Response
+	queryResponse.Scan(&response.ID, &response.UserID, &response.TopicID, &response.Content)
+	// fmt.Println(response)
+	return response
 }
 
 func apiHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func topicsHandler(w http.ResponseWriter, r *http.Request) {
-	a, _ := json.Marshal(getTopics())
-	fmt.Println(string(a))
-	w.Write(a)
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
+	a, _ := json.Marshal(getTopics())
+	// fmt.Println(string(a))
+	w.Write(a)
+
 }
 
 func topicHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
 	pathID := r.URL.Path
 	pathID = path.Base(pathID)
 	pathIDint, _ := strconv.Atoi(pathID)
 	getTopicsVar := getTopics()
 	a, _ := json.Marshal(getTopicsVar[pathIDint-1])
 	w.Write(a)
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
 }
 
 func UsrsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
 	var user []Usr
 	for query.Next() {
 		var usr Usr
 		query.Scan(&usr.ID, &usr.Name, &usr.Password, &usr.Email, &usr.PP)
 		user = append(user, usr)
 	}
-	fmt.Println(user)
+	// fmt.Println(user)
 	a, _ := json.Marshal(user)
 	w.Write(a)
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
 	var user Usr
 	var session Session
 	decoder := json.NewDecoder(r.Body)
 	decoder.Decode(&user)
-	fmt.Println(user)
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
+	// fmt.Println(user)
 	emailVar := `SELECT ID, NAME, PASSWORD, EMAIL FROM bobato.usr WHERE EMAIL="` + user.Email + `" AND PASSWORD="` + user.Password + `"`
 	var getRaw = db.QueryRow(emailVar)
 	getRaw.Scan(&user.ID, &user.Name, &user.Password, &user.Email)
-	fmt.Println(user)
+	// fmt.Println(user)
 	if user.ID != 0 {
 		session.Token = uuid.New().String()
-		session.Name = user.Name
-		fmt.Println(session.Token)
+		session.UserID = user.ID
+		// fmt.Println(session.Token)
+		insert := `INSERT INTO bobato.session (USR_ID, TOKEN) VALUES (` + strconv.Itoa(session.UserID) + `,"` + session.Token + `");`
+		// fmt.Println(insert)
+		_, err := db.Query(insert)
 		a, _ := json.Marshal(session)
 		w.Write(a)
+		if err != nil {
+			// fmt.Println(err)
+		}
+
 	}
 }
 
 func registerHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
 	var register Usr
 	// var session Session
 	decoder := json.NewDecoder(r.Body)
 	decoder.Decode(&register)
-	fmt.Println(register)
+	// fmt.Println(register)
 
 	if register.Password == register.Confirmation {
 		insert := `INSERT INTO bobato.usr (NAME, PASSWORD, EMAIL) VALUES ("` + register.Name + `","` + register.Password + `","` + register.Email + `");`
@@ -144,10 +170,8 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 			log.Fatal(err)
 		}
 	} else {
-		fmt.Println("password != confirm")
+		// fmt.Println("password != confirm")
 	}
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
 
 }
 
@@ -157,6 +181,7 @@ func createTopicHandler(w http.ResponseWriter, r *http.Request) {
 	var topic Topic
 	decoder := json.NewDecoder(r.Body)
 	decoder.Decode(&topic)
+	fmt.Println(topic)
 	insert := `INSERT INTO bobato.topic (TOPIC_NAME, CONTENT, THEME, USR_ID) VALUES ("` + topic.Title + `","` + topic.Content + `","` + topic.Theme + `",` + strconv.Itoa(topic.UserID) + `);`
 	fmt.Println(insert)
 	_, err := db.Query(insert)
@@ -172,12 +197,12 @@ func responseTopicHandler(w http.ResponseWriter, r *http.Request) {
 	var response Response
 	decoder := json.NewDecoder(r.Body)
 	decoder.Decode(&response)
-	fmt.Println(response)
-	insert := `INSERT INTO bobato.response (TOPIC_ID, CONTENT, USR_ID) VALUES (` + strconv.Itoa(response.TopicID) + `,"` + response.Content + `",` + strconv.Itoa(response.UserID) + `);`
-	fmt.Println(insert)
+	// fmt.Println(response)
+	insert := `INSERT INTO bobato.response (TOPIC_ID, CONTENT) VALUES (` + strconv.Itoa(response.TopicID) + `,"` + response.Content + `",` + `);`
+	// fmt.Println(insert)
 	_, err := db.Query(insert)
 	if err != nil {
-		fmt.Println(err)
+		// fmt.Println(err)
 	}
 }
 
