@@ -45,8 +45,9 @@ type Usr struct {
 }
 
 type Session struct {
-	UserID int
-	Token  string
+	UserID   int
+	UserName string
+	Token    string
 }
 
 // type Register struct {
@@ -98,7 +99,6 @@ func topicsHandler(w http.ResponseWriter, r *http.Request) {
 	a, _ := json.Marshal(getTopics())
 	// fmt.Println(string(a))
 	w.Write(a)
-
 }
 
 func topicHandler(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +136,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	// fmt.Println(user)
 	emailVar := `SELECT ID, NAME, PASSWORD, EMAIL FROM bobato.usr WHERE EMAIL="` + user.Email + `" AND PASSWORD="` + user.Password + `"`
 	var getRaw = db.QueryRow(emailVar)
-	getRaw.Scan(&user.ID, &user.Name, &user.Password, &user.Email)
+	getRaw.Scan(&user.ID, &session.UserName, &user.Password, &user.Email)
+	fmt.Println(user.Password, session.UserName)
 	// fmt.Println(user)
 	if user.ID != 0 {
 		session.Token = uuid.New().String()
@@ -177,23 +178,28 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 
 func createTopicHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
+	token := r.Header.Get("Authorization")
+	fmt.Println(token)
+	usrIDQuery := db.QueryRow(`SELECT USR_ID FROM bobato.session WHERE TOKEN="` + token + `"`)
+	var usrID int
+	usrIDQuery.Scan(&usrID)
 	var topic Topic
 	decoder := json.NewDecoder(r.Body)
 	decoder.Decode(&topic)
 	fmt.Println(topic)
+	topic.UserID = usrID
 	insert := `INSERT INTO bobato.topic (TOPIC_NAME, CONTENT, THEME, USR_ID) VALUES ("` + topic.Title + `","` + topic.Content + `","` + topic.Theme + `",` + strconv.Itoa(topic.UserID) + `);`
 	fmt.Println(insert)
 	_, err := db.Query(insert)
 	if err != nil {
 		fmt.Println(err)
 	}
-
 }
 
 func responseTopicHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Headers", "*")
 	var response Response
 	decoder := json.NewDecoder(r.Body)
 	decoder.Decode(&response)
